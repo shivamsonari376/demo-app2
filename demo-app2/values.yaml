@@ -1,0 +1,34 @@
+
+replicaCount: 1
+
+image:
+  repository: docker.io/ankitsonari376/demo-app2
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Probes use the named port "http"
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+
+# OpenShift Route (enable for external access)
+route:
+  enabled: true
+  host: ""    # leave empty to let OpenShift generate a host
+  # tls:       # optional: uncomment for TLS
+  #   termination: edge
+ 
+
+autoscaling:
+  enabled: false
+
