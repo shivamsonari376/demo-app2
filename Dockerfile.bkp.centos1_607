@@ -1,0 +1,49 @@
+# =========================
+# BUILD STAGE (CentOS Stream 9 + JDK 21 + Maven)
+# =========================
+FROM quay.io/centos/centos:stream9 AS build
+
+# Install JDK 21 and Maven
+RUN dnf -y install java-21-openjdk-devel maven tar gzip shadow-utils \
+    && dnf clean all
+
+# Ensure Maven uses JDK 21
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+WORKDIR /workspace
+
+# Optional sanity check
+RUN java -version && javac -version && mvn -version
+
+# Copy project and build (skip tests for speed)
+COPY . .
+RUN mvn -B -DskipTests clean package
+
+# =========================
+# RUNTIME STAGE (CentOS Stream 9 + JRE 21)
+# =========================
+FROM quay.io/centos/centos:stream9 AS runtime
+
+# Install headless JRE 21 for runtime
+RUN dnf -y install java-21-openjdk-headless shadow-utils \
+    && dnf clean all
+
+# Ensure runtime uses JRE 21
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# Create non-root user
+RUN useradd -m -U -r -s /sbin/nologin appuser
+
+WORKDIR /app
+
+# Copy the built JAR from the build stage (update name if needed)
+# NOTE: The build stage produces target/<artifact>.jar; we rename it to app.jar here.
+COPY --from=build /workspace/target/demo-0.0.1-SNAPSHOT.jar /app/app.jar
+
+EXPOSE 8080
+USER appuser
+
+# ✅ Exec-form ENTRYPOINT (no shell, no quoting issues)
+ENTRYPOINT ["java","-jar","/app/app.jar"]

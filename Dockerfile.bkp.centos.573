@@ -1,0 +1,51 @@
+
+# =========================
+# BUILD STAGE (CentOS Stream 9 + JDK 21 + Maven)
+# =========================
+FROM quay.io/centos/centos:stream9 AS build
+
+# Reduce extra deps, skip docs (saves space), clean caches
+RUN dnf -y --setopt=install_weak_deps=False --nodocs \
+       install java-21-openjdk-devel maven tar gzip shadow-utils \
+    && dnf clean all && rm -rf /var/cache/dnf
+
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+WORKDIR /workspace
+
+# Optional sanity check
+RUN java -version && javac -version && mvn -version
+
+# Copy sources and build (skip tests for speed)
+COPY . .
+RUN mvn -B -DskipTests clean package
+
+# =========================
+# RUNTIME STAGE (UBI9-minimal + JRE 21 headless)
+# =========================
+FROM registry.access.redhat.com/ubi9-minimal AS runtime
+
+# Install only headless JRE using microdnf, no weak deps, no docs
+RUN microdnf -y --setopt=install_weak_deps=0 --nodocs \
+       install java-21-openjdk-headless shadow-utils \
+    && microdnf clean all
+
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# Create non-root user (numeric UID)
+RUN useradd -M -U -r -s /sbin/nologin -u 1001 appuser
+
+WORKDIR /app
+
+# Copy the built JAR from the build stage
+COPY --from=build /workspace/target/demo-0.0.1-SNAPSHOT.jar /app/app.jar
+
+EXPOSE 8080
+
+# Run as non-root
+USER 1001
+
+# Container entrypoint
+ENTRYPOINT ["java","-jar","/app/app.jar"]

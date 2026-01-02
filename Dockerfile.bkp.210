@@ -6,7 +6,7 @@ FROM quay.io/centos/centos:stream9 AS build
 
 # Install JDK 21 + Maven + jmods + binutils (objcopy needed by --strip-debug)
 RUN dnf -y --setopt=install_weak_deps=False --nodocs \
-       install java-21-openjdk-devel java-21-openjdk-jmods maven binutils \
+       install java-21-openjdk-devel java-21-openjdk-jmods maven tar gzip binutils \
     && dnf clean all && rm -rf /var/cache/dnf
 
 WORKDIR /workspace

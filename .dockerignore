@@ -1,0 +1,37 @@
+target/
+# Ignore Maven build output
+target/
+*.jar
+*.war
+*.ear
+
+# Ignore local build tools and caches
+.mvn/
+.mvnw
+mvnw.cmd
+root/.m2/
+
+# Ignore Git and VCS files
+.git/
+.gitignore
+.gitattributes
+
+# Ignore IDE settings
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# Ignore logs and temp files
+*.log
+*.tmp
+*.bak
+*.old
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore Docker-related files (optional)
+docker-compose.yml
+Dockerfile*
