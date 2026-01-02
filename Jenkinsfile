@@ -1,33 +1,34 @@
+
 pipeline {
     agent any
 
     environment {
         // Jenkins credentials bindings
         OPENSHIFT_TOKEN = credentials('openshift-token')
-        DOCKERHUB = credentials('dockerhub-registry') // exposes DOCKERHUB_USR and DOCKERHUB_PSW
+        DOCKERHUB       = credentials('dockerhub-registry') // provides DOCKERHUB_USR and DOCKERHUB_PSW
 
         // Fixed values based on your environment
-        OPENSHIFT_API = 'https://api.rm3.7wse.p1.openshiftapps.com:6443'
+        OPENSHIFT_API     = 'https://api.rm3.7wse.p1.openshiftapps.com:6443'
         OPENSHIFT_PROJECT = 'shivam-j-singh-dev'
-        GIT_URL = 'https://github.com/shivamsonari376/demo-app2.git'
-        GIT_BRANCH = 'main'
-        DOCKER_IMAGE = 'docker.io/ankitsonari376/demo-app2'
-        IMAGE_TAG = 'latest'
-        HELM_RELEASE = 'demo-app2'
-        HELM_CHART_PATH = './demo-app2'
+        GIT_URL           = 'https://github.com/shivamsonari376/demo-app2.git'
+        GIT_BRANCH        = 'main'
+
+        // Image repo stays fixed; tag will be the commit SHA
+        DOCKER_IMAGE     = 'docker.io/ankitsonari376/demo-app2'
+        HELM_RELEASE     = 'demo-app2'
+        HELM_CHART_PATH  = './demo-app2'
     }
 
     options {
         timestamps()
-        // If you later install the AnsiColor plugin, you can re-enable:
-        // ansiColor('xterm')
+        // ansiColor('xterm') // enable if plugin installed
+        buildDiscarder(logRotator(numToKeepStr: '20'))
     }
 
     // Trigger on GitHub webhook push events
     triggers {
         githubPush()
-        // Optional fallback if webhook isn’t reachable:
-        // pollSCM('H/5 * * * *')
+        // pollSCM('H/5 * * * *') // optional fallback if webhook isn’t reachable
     }
 
     stages {
@@ -48,9 +49,9 @@ pipeline {
 
         stage('Checkout') {
             steps {
+                // Public repo: credentials not required
                 git branch: "${GIT_BRANCH}",
-                    url: "${GIT_URL}",
-                    credentialsId: 'github-token'
+                    url: "${GIT_URL}"
             }
         }
 
@@ -58,8 +59,10 @@ pipeline {
             steps {
                 sh '''
                 set -e
-                echo "==> Building image ${DOCKER_IMAGE}:${IMAGE_TAG}"
-                docker build -t ${DOCKER_IMAGE}:${IMAGE_TAG} .
+                # Use the commit SHA as the image tag (available after checkout)
+                TAG="${GIT_COMMIT}"
+                echo "==> Building image ${DOCKER_IMAGE}:${TAG}"
+                docker build -t ${DOCKER_IMAGE}:${TAG} .
                 docker images | grep -E "REPOSITORY|${DOCKER_IMAGE}" || true
                 '''
             }
@@ -69,10 +72,13 @@ pipeline {
             steps {
                 sh '''
                 set -e
+                TAG="${GIT_COMMIT}"
+
                 echo "==> Logging in to Docker Hub as $DOCKERHUB_USR"
                 echo "$DOCKERHUB_PSW" | docker login -u "$DOCKERHUB_USR" --password-stdin
-                echo "==> Pushing ${DOCKER_IMAGE}:${IMAGE_TAG}"
-                docker push ${DOCKER_IMAGE}:${IMAGE_TAG}
+
+                echo "==> Pushing ${DOCKER_IMAGE}:${TAG}"
+                docker push ${DOCKER_IMAGE}:${TAG}
                 '''
             }
         }
@@ -83,10 +89,16 @@ pipeline {
                 set -e
                 echo "==> Logging into OpenShift API ${OPENSHIFT_API}"
                 oc login --token="$OPENSHIFT_TOKEN" --server="${OPENSHIFT_API}" --insecure-skip-tls-verify=true
+
                 echo "==> Switching to project ${OPENSHIFT_PROJECT}"
                 oc project "${OPENSHIFT_PROJECT}"
+
                 echo "==> Current user:"
                 oc whoami
+
+                echo "==> Existing deployments:"
+                oc get deploy -n "${OPENSHIFT_PROJECT}" || true
+
                 echo "==> Existing pods:"
                 oc get pods -n "${OPENSHIFT_PROJECT}" -o wide || true
                 '''
@@ -97,15 +109,19 @@ pipeline {
             steps {
                 sh '''
                 set -e
-                echo "==> Helm upgrade/install: release=${HELM_RELEASE}, chart=${HELM_CHART_PATH}"
+                TAG="${GIT_COMMIT}"
+
+                echo "==> Helm upgrade/install: release=${HELM_RELEASE}, chart=${HELM_CHART_PATH}, tag=${TAG}"
                 helm upgrade --install "${HELM_RELEASE}" "${HELM_CHART_PATH}" \
                   --set image.repository="${DOCKER_IMAGE}" \
-                  --set image.tag="${IMAGE_TAG}" \
-                  --namespace "${OPENSHIFT_PROJECT}"
+                  --set image.tag="${TAG}" \
+                  --set image.pullPolicy=Always \
+                  --namespace "${OPENSHIFT_PROJECT}" \
+                  --reuse-values
 
                 echo "==> Waiting for rollout..."
-                # Adjust deployment name if your chart uses another name
-                # e.g., demo-app2-deployment
+                # NOTE: If your chart names the Deployment differently, adjust this name:
+                # e.g., oc rollout status deployment/demo-app2-deployment ...
                 oc rollout status deployment/${HELM_RELEASE} --namespace "${OPENSHIFT_PROJECT}" --timeout=180s || true
 
                 echo "==> Pods after deploy:"
@@ -120,7 +136,7 @@ pipeline {
             echo "Deployment successful: ${HELM_RELEASE} in project ${OPENSHIFT_PROJECT}"
         }
         failure {
-            echo " Pipeline failed. Please review the stage logs."
+            echo "Pipeline failed. Please review the stage logs."
         }
         always {
             sh '''
