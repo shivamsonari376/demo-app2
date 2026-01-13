@@ -7,7 +7,7 @@ image:
   pullPolicy: Always
 
 service:
-  type: ClusterIP
+  type: NodePort
   port: 8080
 
 # Probes use the named port "http"
