@@ -1,5 +1,5 @@
 
-replicaCount: 3
+replicaCount: 4
 
 image:
   repository: docker.io/ankitsonari376/demo-app2
